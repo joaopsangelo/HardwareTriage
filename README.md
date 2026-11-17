@@ -22,6 +22,12 @@ dotnet publish -c Release -r win-x64
 
 > **Note**: Requires Administrator privileges (`app.manifest`) to read hardware temperature sensors and low-level S.M.A.R.T. attributes.
 
+## Known Limitations
+
+- **RAM Channel Mode Heuristic**: Windows SMBIOS/WMI (`Win32_PhysicalMemory`) does not directly report the active memory controller channel mode. `Dual Channel` vs. `Single Channel` is inferred from DIMM count, capacity symmetry, and slot/channel labels (`ChannelA`/`ChannelB`, `DIMM_A`/`DIMM_B`). If a motherboard BIOS uses generic slot names (`DIMM 0`, `DIMM 1`, etc.) without channel tags and two identical modules are installed on the same channel, it may report `Dual Channel`.
+- **On-Demand Sensor Polling**: Telemetry is collected at startup and when clicking **Atualizar Sensores** rather than via continuous background polling, keeping CPU overhead at zero during disk benchmarks.
+- **RAID & USB Enclosure Pass-Through**: Generic USB enclosures without UASP/SAT pass-through or certain hardware/VMD RAID controllers may hide individual drive S.M.A.R.T. attributes from Windows.
+
 ---
 
 ## AI Generation Prompt (Orchestrator Blueprint)
