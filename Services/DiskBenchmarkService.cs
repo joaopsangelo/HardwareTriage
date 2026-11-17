@@ -130,6 +130,21 @@ public sealed class DiskBenchmarkService
             // Pre-size file to 512 MiB (exact multiple of 4096 bytes).
             RandomAccess.SetLength(handle, BenchmarkFileSizeBytes);
 
+            using var cancelReg = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    if (handle is { IsInvalid: false, IsClosed: false })
+                    {
+                        CancelIoEx(handle.DangerousGetHandle(), IntPtr.Zero);
+                    }
+                }
+                catch
+                {
+                    // Ignore cancellation race if handle is already closing.
+                }
+            });
+
             // 1. SEQ1M Q8T1 (Write & Read)
             progress.Report((10, "Executando SEQ1M Q8T1 (Escrita Sequencial)..."));
             double seqWriteMbps = await RunSequentialAsync(handle, isWrite: true, queueDepth: 8, cancellationToken)
@@ -229,17 +244,24 @@ public sealed class DiskBenchmarkService
                         }
 
                         long offset = blockIdx * SeqBlockSize;
-                        if (isWrite)
+                        try
                         {
-                            await RandomAccess.WriteAsync(handle, memory, offset, cancellationToken)
-                                .ConfigureAwait(false);
-                            Interlocked.Add(ref totalBytes, SeqBlockSize);
+                            if (isWrite)
+                            {
+                                await RandomAccess.WriteAsync(handle, memory, offset, CancellationToken.None)
+                                    .ConfigureAwait(false);
+                                Interlocked.Add(ref totalBytes, SeqBlockSize);
+                            }
+                            else
+                            {
+                                int read = await RandomAccess.ReadAsync(handle, memory, offset, CancellationToken.None)
+                                    .ConfigureAwait(false);
+                                Interlocked.Add(ref totalBytes, read);
+                            }
                         }
-                        else
+                        catch (IOException) when (cancellationToken.IsCancellationRequested)
                         {
-                            int read = await RandomAccess.ReadAsync(handle, memory, offset, cancellationToken)
-                                .ConfigureAwait(false);
-                            Interlocked.Add(ref totalBytes, read);
+                            cancellationToken.ThrowIfCancellationRequested();
                         }
                     }
                 }, CancellationToken.None);
@@ -305,17 +327,24 @@ public sealed class DiskBenchmarkService
                         long slotIndex = rngState % total4KSlots;
                         long offset = slotIndex * RndBlockSize;
 
-                        if (isWrite)
+                        try
                         {
-                            await RandomAccess.WriteAsync(handle, memory, offset, cancellationToken)
-                                .ConfigureAwait(false);
-                            Interlocked.Add(ref totalBytes, RndBlockSize);
+                            if (isWrite)
+                            {
+                                await RandomAccess.WriteAsync(handle, memory, offset, CancellationToken.None)
+                                    .ConfigureAwait(false);
+                                Interlocked.Add(ref totalBytes, RndBlockSize);
+                            }
+                            else
+                            {
+                                int read = await RandomAccess.ReadAsync(handle, memory, offset, CancellationToken.None)
+                                    .ConfigureAwait(false);
+                                Interlocked.Add(ref totalBytes, read);
+                            }
                         }
-                        else
+                        catch (IOException) when (cancellationToken.IsCancellationRequested)
                         {
-                            int read = await RandomAccess.ReadAsync(handle, memory, offset, cancellationToken)
-                                .ConfigureAwait(false);
-                            Interlocked.Add(ref totalBytes, read);
+                            cancellationToken.ThrowIfCancellationRequested();
                         }
 
                         iterations++;
